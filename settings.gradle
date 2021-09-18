@@ -1,0 +1,3 @@
+rootProject.name = "PiFan"
+include ':lib'
+include ':app'

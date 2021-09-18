@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">PiFan</string>
+    <string name="today">Today</string>
+    <string name="yesterday">Yesterday</string>
+</resources>
