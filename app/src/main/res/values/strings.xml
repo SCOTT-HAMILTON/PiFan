@@ -2,4 +2,7 @@
     <string name="app_name">PiFan</string>
     <string name="today">Today</string>
     <string name="yesterday">Yesterday</string>
+    <string name="preferences">Preferences</string>
+    <string name="server_url">Server url</string>
+    <string name="port_number">Port number</string>
 </resources>

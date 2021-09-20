@@ -7,35 +7,41 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerInputChange
-import androidx.compose.ui.input.pointer.consumeAllChanges
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.*
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.android.volley.*
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley.newRequestQueue
+import com.chargemap.compose.numberpicker.NumberPicker
 import com.example.pifan.ui.theme.PiFanTheme
 import io.github.staakk.cchart.Chart
 import io.github.staakk.cchart.axis.axisDrawer
@@ -45,29 +51,37 @@ import io.github.staakk.cchart.data.*
 import io.github.staakk.cchart.label.*
 import io.github.staakk.cchart.renderer.*
 import io.github.staakk.cchart.util.TextAlignment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import java.net.URI
 import java.time.LocalDateTime
+import java.time.Period
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     companion object {
-        private val PREF_DAYS_JSON_DATA_KEY = "pref_days_json_data"
+        private const val PREF_DAYS_JSON_DATA_KEY = "pref_days_json_data"
+        private const val PREF_SERVER_URL_KEY = "pref_server_url"
+        private const val PREF_PORT_VALUE_KEY = "pref_port_value"
+        private const val DEFAULT_SERVER_URL = "https://example.rpi-fan.api"
+        private const val DEFAULT_PORT_VALUE = 8085
     }
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            Surface(color = Color.Black,
-                modifier = Modifier.fillMaxSize()) {
-            }
-        }
-        requestDaysJsonData(this) { succeed, response ->
+    private var currentServerUrl = ""
+    private var currentPortValue = 1000
+
+    @ExperimentalSerializationApi
+    @ExperimentalFoundationApi
+    private fun tryUpdatingData() {
+        requestDaysJsonData(this, currentServerUrl, currentPortValue) { succeed, response, error ->
             val jsonStr = if (succeed) {
                 getPreferences(Context.MODE_PRIVATE).edit().
-                    putString(PREF_DAYS_JSON_DATA_KEY, response).commit()
+                putString(PREF_DAYS_JSON_DATA_KEY, response).apply()
                 response
             } else {
                 getPreferences(Context.MODE_PRIVATE).getString(PREF_DAYS_JSON_DATA_KEY, "")
@@ -81,33 +95,250 @@ class MainActivity : ComponentActivity() {
                     PiFanTheme (darkTheme = true) {
                         // A surface container using the 'background' color from the theme
                         Surface(color = Color.Black,
-                                modifier = Modifier.fillMaxSize()) {
-                            Main(daysData)
+                            modifier = Modifier.fillMaxSize()) {
+                            NavigationHost(daysData,
+                                currentServerUrl,
+                                currentPortValue, {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        println("Writing new current Server Url: $it")
+                                        currentServerUrl = it
+                                        getPreferences(Context.MODE_PRIVATE).edit()
+                                            .putString(PREF_SERVER_URL_KEY, it).apply()
+                                    }
+                                }, {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        println("Writing new port value: $it")
+                                        currentPortValue = it
+                                        getPreferences(Context.MODE_PRIVATE).edit()
+                                            .putInt(PREF_PORT_VALUE_KEY, it).apply()
+                                    }
+                                }, snackBarMessage = if (succeed) null else error, {
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        tryUpdatingData()
+                                    }
+                                }
+                            )
                         }
                     }
                 }
             }
         }
     }
-}
 
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    PiFanTheme {
-        Main(listOf(MyData.Today))
+    @ExperimentalSerializationApi
+    @ExperimentalFoundationApi
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        currentServerUrl = getPreferences(Context.MODE_PRIVATE)
+            .getString(PREF_SERVER_URL_KEY, DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL
+        currentPortValue = getPreferences(Context.MODE_PRIVATE)
+            .getInt(PREF_PORT_VALUE_KEY, DEFAULT_PORT_VALUE)
+        println("currentPortValue: $currentPortValue")
+        setContent {
+            Surface(color = Color.Black,
+                modifier = Modifier.fillMaxSize()) {
+            }
+        }
+        tryUpdatingData()
     }
 }
 
-fun List<List<TempDataPoint>>.zipWithDays(context: Context): List<Pair<String, List<TempDataPoint>>> =
+@ExperimentalFoundationApi
+@Preview(showBackground = false)
+@Composable
+fun DefaultPreview() {
+    PiFanTheme {
+        Surface(color = Color.Black,
+            modifier = Modifier.fillMaxSize()) {
+            NavigationHost(listOf(MyData.Today), "", 0)
+        }
+    }
+}
+//
+@ExperimentalFoundationApi
+@Composable
+fun NavigationHost(daysData: List<List<TempDataPoint>>,
+                   defaultServerUrl: String,
+                   defaultPortValue: Int,
+                   onServerUrlChange: ((String) -> Unit)? = null,
+                   onPortValueChange: ((Int) -> Unit)? = null,
+                   snackBarMessage: String? = null,
+                   onSnackBarAction: (() -> Unit)? = null) {
+    val navController = rememberNavController()
+    var serverUrl by rememberSaveable {
+        mutableStateOf(defaultServerUrl) }
+    var portValue by rememberSaveable {
+        mutableStateOf(defaultPortValue) }
+    NavHost(navController = navController, startDestination = "MainScreen") {
+        composable("MainScreen") {
+            Main(daysData, navController, snackBarMessage, onSnackBarAction)
+        }
+        composable("PreferencesScreen") {
+            PreferencesScreen(navController, serverUrl, {
+                onServerUrlChange?.invoke(it)
+                serverUrl = it
+            }, portValue, {
+                onPortValueChange?.invoke(it)
+                portValue = it
+            }, snackBarMessage, onSnackBarAction)
+        }
+    }
+}
+
+@ExperimentalFoundationApi
+@Preview(showBackground = true)
+@Composable
+fun PreferencesScreen(navController: NavHostController? = null,
+                      serverUrl: String = "",
+                      onServerUrlChange: ((String)->Unit)? = null,
+                      portValue: Int = 1000,
+                      onPortValueChange: ((Int)->Unit)? = null,
+                      snackBarMessage: String? = null,
+                      onSnackBarAction: (()->Unit)? = null) {
+    val scaffoldState = rememberScaffoldState()
+    val scope = rememberCoroutineScope()
+    snackBarMessage?.let {
+        scope.launch {
+            if (scaffoldState.snackbarHostState.showSnackbar(
+                    it,
+                    actionLabel = "Retry",
+                    SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                onSnackBarAction?.invoke()
+            }
+        }
+    }
+    Scaffold(
+        scaffoldState = scaffoldState,
+        snackbarHost = {
+            SnackbarHost(it) { data ->
+                Snackbar(
+                    backgroundColor = Color.Black,
+                    contentColor = Color.White,
+                    snackbarData = data
+                )
+            }
+        },
+        topBar = {
+          TopAppBar(
+              title = { Text(stringResource(R.string.preferences)) },
+              navigationIcon = {
+                  IconButton(onClick = { navController?.navigate("MainScreen") }) {
+                      Icon(Icons.Filled.ArrowBack, contentDescription = "Localized description")
+                  }
+              },
+          )
+        },
+        backgroundColor = Color.Black,
+        content = {
+            Row(modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colors.surface,
+                        shape = RoundedCornerShape(5)
+                    )
+                    .padding(50.dp)
+                    .height(300.dp)
+                    .fillMaxWidth()
+                    .align(Alignment.CenterVertically),
+                    contentAlignment = Alignment.Center) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        TextField(
+                            value = serverUrl,
+                            onValueChange = {
+                                onServerUrlChange?.invoke(it)
+                            },
+                            label = { Text(stringResource(R.string.server_url)) },
+                            placeholder = { Text("https://myserver.rpi-fan.api") },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colors.onSurface,
+                                fontSize = 18.sp
+                            )
+                        )
+                        Spacer(modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(stringResource(R.string.port_number),
+                                color = MaterialTheme.colors.onSurface)
+                            Spacer(
+                                modifier = Modifier
+                                    .padding(end = 50.dp)
+                            )
+                            NumberPicker(
+                                value = portValue,
+                                range = 1_000..1_000_000,
+                                onValueChange = { value ->
+                                    onPortValueChange?.invoke(value)
+                                },
+                                textStyle = TextStyle(color = MaterialTheme.colors.onSurface)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun Main(daysData: List<List<TempDataPoint>>,
+         navController: NavHostController,
+         snackBarMessage: String? = null,
+         onSnackBarAction: (()->Unit)? = null) {
+    val scaffoldState = rememberScaffoldState()
+    val scope = rememberCoroutineScope()
+    snackBarMessage?.let {
+        scope.launch {
+            if (scaffoldState.snackbarHostState.showSnackbar(
+                it,
+                actionLabel = "Retry",
+                SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                onSnackBarAction?.invoke()
+            }
+        }
+    }
+    Scaffold(
+        scaffoldState = scaffoldState,
+        snackbarHost = {
+            SnackbarHost(it) { data ->
+                Snackbar(
+                    backgroundColor = Color.Black,
+                    contentColor = Color.White,
+                    snackbarData = data
+                )
+            }
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { navController.navigate("PreferencesScreen") }
+            ) {
+                Icon(Icons.Filled.Settings, contentDescription = "")
+            }
+        }
+        ,backgroundColor = Color.Black,
+        content = {
+            DaysList(daysData)
+        }
+    )
+}
+
+fun List<List<TempDataPoint>>.zipWithDays(context: Context, offset: Int): List<Pair<String, List<TempDataPoint>>> =
     List(size) { index ->
-        when (index) {
+        when (index+offset) {
             0 -> context.getString(R.string.today)
             1 -> context.getString(R.string.yesterday)
             else -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     DateTimeFormatter.ofPattern("EEEE").format(
-                        LocalDateTime.now().minusDays(index.toLong())
+                        LocalDateTime.now().minusDays((index+offset).toLong())
                     ).let {
                         it.first().toUpperCase()+it.substring(1)
                     }
@@ -142,15 +373,28 @@ fun DayGraphBox(index: Int,
 }
 
 @Composable
-fun Main(daysJsonData: List<List<TempDataPoint>>) {
+fun DaysList(daysJsonData: List<List<TempDataPoint>>) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val localContext = LocalContext.current
+    val maxDate = daysJsonData.flatMap { dayData ->
+        dayData.map { dateToEpoch(it.date) }
+    }.maxByOrNull { it }?.let {
+        LocalDateTime.ofEpochSecond(it, 0, ZoneOffset.UTC)
+    }
+    val now = LocalDateTime.now()
+    val offset = if (maxDate?.isBefore(now.withDayOfMonth(now.dayOfMonth-1)) == true) {
+        val period = Period.between(maxDate.toLocalDate(), now.toLocalDate())
+        period.days
+    } else { 0 }
     LazyColumn(
         state = listState,
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        itemsIndexed(daysJsonData.zipWithDays(localContext)) { index, item ->
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .padding(top = 10.dp)
+            .fillMaxSize()) {
+        itemsIndexed(daysJsonData.zipWithDays(localContext, offset)) { index, item ->
             DayGraphBox(index = index, item = item) {
                 coroutineScope.launch {
                     listState.animateScrollToItem(index)
@@ -158,7 +402,6 @@ fun Main(daysJsonData: List<List<TempDataPoint>>) {
             }
         }
     }
-
 }
 
 fun dateToEpoch(dateStr: String): Long {
@@ -174,36 +417,29 @@ fun TempDataPoint.toTempPoint(): Data.Point {
     return pointOf(dateToEpoch(date).toFloat(), temp)
 }
 
-fun requestDaysJsonData(context: Context, callback: (succeed: Boolean, response: String)->Unit) {
-    val url = "http://serverpi:60019/all_temps"
+fun requestDaysJsonData(context: Context,
+                        serverUrl: String,
+                        portValue: Int,
+                        callback: (succeed: Boolean, response: String, error: String?)->Unit) {
+    val url = URI(serverUrl).let {
+        URI(it.scheme, it.userInfo, it.host, portValue, "/all_temps", it.query, it.fragment)
+    }
+    println("serverUrl: $serverUrl, portValue: $portValue, final Url: `$url`")
     val stringRequest = StringRequest(
-        Request.Method.GET, url,
+        Request.Method.GET, url.toString(),
         { response ->
-            callback(true, response)
+            callback(true, response, null)
         },
         { error ->
             println("[error] couldn't make request to web service `$url`: $error")
-            callback(false, "")
+            callback(false, "", error.message)
         }
     ).setRetryPolicy(DefaultRetryPolicy(10_000, 1, 1f))
     newRequestQueue(context).add(stringRequest)
 }
 
-fun requestDayJsonData(dayOffset: Int, context: Context, callback: (response: String)->Unit) {
-    require(dayOffset in 0..7)
-    val url = "http://serverpi:60019/temps?dayOffset=$dayOffset"
-
-    val stringRequest = StringRequest(
-        Request.Method.GET, url,
-        { response ->
-            callback(response)
-        },
-        { println("[error] couldn't make request to web service: `$url`") }
-    )
-    newRequestQueue(context).add(stringRequest)
-}
-fun normalizedTempData(data: List<TempDataPoint>) =
-    if (data.size>10) {
+fun normalizedTempData(data: List<TempDataPoint>): List<TempDataPoint> {
+    return if (data.size > 10) {
         val chunkSize = data.size / 10
         data.chunked(chunkSize).map {
             it.reduce { p1, p2 ->
@@ -215,10 +451,9 @@ fun normalizedTempData(data: List<TempDataPoint>) =
                 )
             }
         }
-    } else { data }
-
-fun json2DayData(dayJsonData: String) {
-    normalizedTempData(Json.decodeFromString(dayJsonData))
+    } else {
+        data
+    }
 }
 
 @Composable
