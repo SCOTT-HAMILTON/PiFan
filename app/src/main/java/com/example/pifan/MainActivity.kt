@@ -93,28 +93,46 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 setContent {
                     PiFanTheme (darkTheme = true) {
+                        val snackBarHostState = remember { SnackbarHostState() }
+                        if (!succeed && error != null) {
+                            LaunchedEffect(snackBarHostState) {
+                                println("Showing SnackBar !")
+                                if (snackBarHostState.showSnackbar(
+                                    error,
+                                    "Retry",
+                                    SnackbarDuration.Long
+                                ) == SnackbarResult.ActionPerformed) {
+                                    tryUpdatingData()
+                                }
+                            }
+                        }
                         // A surface container using the 'background' color from the theme
                         Surface(color = Color.Black,
                             modifier = Modifier.fillMaxSize()) {
                             NavigationHost(daysData,
                                 currentServerUrl,
-                                currentPortValue, {
+                                currentPortValue,
+                                onServerUrlChange = {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         println("Writing new current Server Url: $it")
                                         currentServerUrl = it
                                         getPreferences(Context.MODE_PRIVATE).edit()
                                             .putString(PREF_SERVER_URL_KEY, it).apply()
                                     }
-                                }, {
+                                }, onPortValueChange = {
                                     CoroutineScope(Dispatchers.IO).launch {
                                         println("Writing new port value: $it")
                                         currentPortValue = it
                                         getPreferences(Context.MODE_PRIVATE).edit()
                                             .putInt(PREF_PORT_VALUE_KEY, it).apply()
                                     }
-                                }, snackBarMessage = if (succeed) null else error, {
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        tryUpdatingData()
+                                }, snackbarHost = {
+                                    SnackbarHost(hostState = snackBarHostState) { data ->
+                                        Snackbar(
+                                            snackbarData = data,
+                                            backgroundColor = Color.Black,
+                                            contentColor = Color.White
+                                        )
                                     }
                                 }
                             )
@@ -162,8 +180,7 @@ fun NavigationHost(daysData: List<List<TempDataPoint>>,
                    defaultPortValue: Int,
                    onServerUrlChange: ((String) -> Unit)? = null,
                    onPortValueChange: ((Int) -> Unit)? = null,
-                   snackBarMessage: String? = null,
-                   onSnackBarAction: (() -> Unit)? = null) {
+                   snackbarHost: @Composable (SnackbarHostState)->Unit = {}){
     val navController = rememberNavController()
     var serverUrl by rememberSaveable {
         mutableStateOf(defaultServerUrl) }
@@ -171,16 +188,21 @@ fun NavigationHost(daysData: List<List<TempDataPoint>>,
         mutableStateOf(defaultPortValue) }
     NavHost(navController = navController, startDestination = "MainScreen") {
         composable("MainScreen") {
-            Main(daysData, navController, snackBarMessage, onSnackBarAction)
+            Main(daysData, navController, snackbarHost = snackbarHost)
         }
         composable("PreferencesScreen") {
-            PreferencesScreen(navController, serverUrl, {
-                onServerUrlChange?.invoke(it)
-                serverUrl = it
-            }, portValue, {
-                onPortValueChange?.invoke(it)
-                portValue = it
-            }, snackBarMessage, onSnackBarAction)
+            PreferencesScreen(
+                navController, serverUrl,
+                onServerUrlChange = {
+                    onServerUrlChange?.invoke(it)
+                    serverUrl = it
+                }, portValue,
+                onPortValueChange = {
+                    onPortValueChange?.invoke(it)
+                    portValue = it
+                },
+                snackbarHost = snackbarHost
+            )
         }
     }
 }
@@ -193,31 +215,11 @@ fun PreferencesScreen(navController: NavHostController? = null,
                       onServerUrlChange: ((String)->Unit)? = null,
                       portValue: Int = 1000,
                       onPortValueChange: ((Int)->Unit)? = null,
-                      snackBarMessage: String? = null,
-                      onSnackBarAction: (()->Unit)? = null) {
+                      snackbarHost: @Composable (SnackbarHostState)->Unit = {}) {
     val scaffoldState = rememberScaffoldState()
-    val scope = rememberCoroutineScope()
-    snackBarMessage?.let {
-        scope.launch {
-            if (scaffoldState.snackbarHostState.showSnackbar(
-                    it,
-                    actionLabel = "Retry",
-                    SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-                onSnackBarAction?.invoke()
-            }
-        }
-    }
     Scaffold(
         scaffoldState = scaffoldState,
-        snackbarHost = {
-            SnackbarHost(it) { data ->
-                Snackbar(
-                    backgroundColor = Color.Black,
-                    contentColor = Color.White,
-                    snackbarData = data
-                )
-            }
-        },
+        snackbarHost = snackbarHost,
         topBar = {
           TopAppBar(
               title = { Text(stringResource(R.string.preferences)) },
@@ -228,24 +230,17 @@ fun PreferencesScreen(navController: NavHostController? = null,
               },
           )
         },
-        backgroundColor = Color.Black,
+        backgroundColor = MaterialTheme.colors.surface,
         content = {
             Row(modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colors.surface,
-                        shape = RoundedCornerShape(5)
-                    )
-                    .padding(50.dp)
-                    .height(300.dp)
-                    .fillMaxWidth()
-                    .align(Alignment.CenterVertically),
-                    contentAlignment = Alignment.Center) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Spacer(modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 50.dp))
                         TextField(
                             value = serverUrl,
                             onValueChange = {
@@ -282,7 +277,6 @@ fun PreferencesScreen(navController: NavHostController? = null,
                             )
                         }
                     }
-                }
             }
         }
     )
@@ -291,31 +285,11 @@ fun PreferencesScreen(navController: NavHostController? = null,
 @Composable
 fun Main(daysData: List<List<TempDataPoint>>,
          navController: NavHostController,
-         snackBarMessage: String? = null,
-         onSnackBarAction: (()->Unit)? = null) {
+         snackbarHost: @Composable (SnackbarHostState)->Unit = {}) {
     val scaffoldState = rememberScaffoldState()
-    val scope = rememberCoroutineScope()
-    snackBarMessage?.let {
-        scope.launch {
-            if (scaffoldState.snackbarHostState.showSnackbar(
-                it,
-                actionLabel = "Retry",
-                SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
-                onSnackBarAction?.invoke()
-            }
-        }
-    }
     Scaffold(
         scaffoldState = scaffoldState,
-        snackbarHost = {
-            SnackbarHost(it) { data ->
-                Snackbar(
-                    backgroundColor = Color.Black,
-                    contentColor = Color.White,
-                    snackbarData = data
-                )
-            }
-        },
+        snackbarHost = snackbarHost,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { navController.navigate("PreferencesScreen") }
