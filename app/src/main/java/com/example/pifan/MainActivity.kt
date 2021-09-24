@@ -4,6 +4,10 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -15,10 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import com.example.pifan.ui.theme.PiFanTheme
+import com.google.accompanist.navigation.animation.AnimatedNavHost
+import com.google.accompanist.navigation.animation.composable
+import com.google.accompanist.navigation.animation.rememberAnimatedNavController
+import com.google.accompanist.swiperefresh.SwipeRefresh
+import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,6 +43,7 @@ class MainActivity : ComponentActivity() {
     private var currentServerUrl = ""
     private var currentPortValue = 1000
 
+    @ExperimentalAnimationApi
     @ExperimentalSerializationApi
     @ExperimentalFoundationApi
     private fun tryUpdatingData() {
@@ -61,6 +68,8 @@ class MainActivity : ComponentActivity() {
                 } else listOf()
             runOnUiThread {
                 setContent {
+                    val isRefreshing = remember { mutableStateOf(false) }
+                    isRefreshing.value = false
                     PiFanTheme (darkTheme = true) {
                         val snackBarHostState = remember { SnackbarHostState() }
                         if (!succeed && error != null) {
@@ -71,6 +80,7 @@ class MainActivity : ComponentActivity() {
                                     "Retry",
                                     SnackbarDuration.Long
                                 ) == SnackbarResult.ActionPerformed) {
+                                    isRefreshing.value = true
                                     tryUpdatingData()
                                 }
                             }
@@ -78,7 +88,12 @@ class MainActivity : ComponentActivity() {
                         // A surface container using the 'background' color from the theme
                         Surface(color = Color.Black,
                             modifier = Modifier.fillMaxSize()) {
-                            NavigationHost(daysData,
+                            NavigationHost(
+                                daysData,
+                                isRefreshing.value, {
+                                    isRefreshing.value = true
+                                    tryUpdatingData()
+                                },
                                 currentServerUrl,
                                 currentPortValue,
                                 onServerUrlChange = {
@@ -112,6 +127,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @ExperimentalAnimationApi
     @ExperimentalSerializationApi
     @ExperimentalFoundationApi
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,6 +146,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@ExperimentalAnimationApi
 @ExperimentalFoundationApi
 @Preview(showBackground = false)
 @Composable
@@ -137,29 +154,69 @@ fun DefaultPreview() {
     PiFanTheme {
         Surface(color = Color.Black,
             modifier = Modifier.fillMaxSize()) {
-            NavigationHost(listOf(MyData.Today), "", 0)
+            NavigationHost(listOf(MyData.Today), false, {}, "", 0)
         }
     }
 }
 
+@ExperimentalAnimationApi
 @ExperimentalFoundationApi
 @Composable
 fun NavigationHost(daysData: List<List<TempDataPoint>>,
+                   refreshing: Boolean,
+                   onRefresh: ()->Unit,
                    defaultServerUrl: String,
                    defaultPortValue: Int,
                    onServerUrlChange: ((String) -> Unit)? = null,
                    onPortValueChange: ((Int) -> Unit)? = null,
                    snackbarHost: @Composable (SnackbarHostState)->Unit = {}){
-    val navController = rememberNavController()
+    val navController = rememberAnimatedNavController()
     var serverUrl by rememberSaveable {
         mutableStateOf(defaultServerUrl) }
     var portValue by rememberSaveable {
         mutableStateOf(defaultPortValue) }
-    NavHost(navController = navController, startDestination = "MainScreen") {
-        composable("MainScreen") {
-            Main(daysData, navController, snackbarHost = snackbarHost)
+    AnimatedNavHost(navController = navController, startDestination = "MainScreen") {
+        composable(
+            "MainScreen",
+            enterTransition = { initial, _ ->
+                when (initial.destination.route) {
+                    "PreferencesScreen" ->
+                        slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(700))
+                    else -> null
+                }
+            },
+            exitTransition = { _, target ->
+                when (target.destination.route) {
+                    "PreferencesScreen" ->
+                        slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(700))
+                    else -> null
+                }
+            }
+        ) {
+            SwipeRefresh(
+                state = rememberSwipeRefreshState(refreshing),
+                onRefresh = { onRefresh() },
+            ) {
+                Main(daysData, navController, snackbarHost = snackbarHost)
+            }
         }
-        composable("PreferencesScreen") {
+        composable(
+            "PreferencesScreen",
+            enterTransition = { initial, _ ->
+                when (initial.destination.route) {
+                    "MainScreen" ->
+                        slideInHorizontally(initialOffsetX = { 1000 }, animationSpec = tween(700))
+                    else -> null
+                }
+            },
+            exitTransition = { _, target ->
+                when (target.destination.route) {
+                    "MainScreen" ->
+                        slideOutHorizontally(targetOffsetX = { 1000 }, animationSpec = tween(700))
+                    else -> null
+                }
+            }
+        ) {
             PreferencesScreen(
                 navController, serverUrl,
                 onServerUrlChange = {

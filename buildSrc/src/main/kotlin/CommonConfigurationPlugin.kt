@@ -14,8 +14,8 @@ class CommonConfigurationPlugin : Plugin<Project> {
             androidExt.apply {
                 compileSdkVersion(Config.compileSdkVersion)
                 defaultConfig {
-                    targetSdkVersion(Config.targetSdkVersion)
-                    minSdkVersion(Config.minSdkVersion)
+                    targetSdk = Config.targetSdkVersion
+                    minSdk = Config.minSdkVersion
 
                     versionCode = Config.version
                     versionName = Config.versionName
@@ -30,7 +30,6 @@ class CommonConfigurationPlugin : Plugin<Project> {
                 target.tasks.withType(KotlinCompile::class.java).configureEach {
                     kotlinOptions {
                         jvmTarget = "1.8"
-                        useIR = true
                     }
                 }
 

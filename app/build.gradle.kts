@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("common-config")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.4.32"
+    id("org.jetbrains.kotlin.plugin.serialization") version kotlinVersion
 }
 
 android {
@@ -27,11 +27,9 @@ android {
 }
 
 dependencies {
-//    implementation("androidx.datastore:datastore-core:1.0.0")
-//    implementation("androidx.datastore:datastore-preferences:1.0.0")
-//    implementation("androidx.navigation:navigation-compose:2.4.0-alpha08")
-    implementation("androidx.navigation:navigation-compose:2.4.0-alpha01")
-//    implementation("com.chargemap.compose:numberpicker:0.0.2")
+    val accompanist = "0.18.0"
+    implementation("com.google.accompanist:accompanist-navigation-animation:$accompanist")
+    implementation("com.google.accompanist:accompanist-swiperefresh:$accompanist")
 
 
     implementations(Libs.AndroidX.main)
