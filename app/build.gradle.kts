@@ -5,8 +5,24 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        create("config") {
+            storeFile = file("/home/scott/Android/upload-keystore.jks")
+            storePassword = "test1234"
+            keyAlias = "upload"
+            keyPassword = "test1234"
+        }
+    }
     defaultConfig {
         applicationId = "com.sample.PiFan"
+        signingConfig = signingConfigs.getByName("config")
+    }
+    buildTypes {
+        release {
+            isDebuggable = true
+            isMinifyEnabled = true
+            proguardFile(file("proguard-rules.pro"))
+        }
     }
 }
 
