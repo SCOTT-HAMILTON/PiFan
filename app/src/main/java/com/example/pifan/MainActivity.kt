@@ -25,12 +25,11 @@ import com.google.accompanist.navigation.animation.composable
 import com.google.accompanist.navigation.animation.rememberAnimatedNavController
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import java.lang.Thread.sleep
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -46,7 +45,7 @@ class MainActivity : ComponentActivity() {
     @ExperimentalAnimationApi
     @ExperimentalSerializationApi
     @ExperimentalFoundationApi
-    private fun tryUpdatingData() {
+    private suspend fun tryUpdatingData() {
         requestDaysJsonData(this, currentServerUrl, currentPortValue) { succeed, response, error ->
             val jsonStr = if (succeed) {
                 getPreferences(Context.MODE_PRIVATE).edit().
@@ -68,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 } else listOf()
             runOnUiThread {
                 setContent {
+                    val coroutineScope = rememberCoroutineScope()
                     val isRefreshing = remember { mutableStateOf(false) }
                     isRefreshing.value = false
                     PiFanTheme (darkTheme = true) {
@@ -81,7 +81,11 @@ class MainActivity : ComponentActivity() {
                                     SnackbarDuration.Long
                                 ) == SnackbarResult.ActionPerformed) {
                                     isRefreshing.value = true
-                                    tryUpdatingData()
+                                    coroutineScope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            tryUpdatingData()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -92,7 +96,13 @@ class MainActivity : ComponentActivity() {
                                 daysData,
                                 isRefreshing.value, {
                                     isRefreshing.value = true
-                                    tryUpdatingData()
+                                    coroutineScope.launch {
+                                        println("Waiting....")
+                                        withContext(Dispatchers.Default) {
+                                            tryUpdatingData()
+                                        }
+                                        println("Waited")
+                                    }
                                 },
                                 currentServerUrl,
                                 currentPortValue,
@@ -142,7 +152,9 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize()) {
             }
         }
-        tryUpdatingData()
+        CoroutineScope(Dispatchers.IO).launch {
+            tryUpdatingData()
+        }
     }
 }
 

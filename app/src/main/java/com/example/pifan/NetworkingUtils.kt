@@ -5,12 +5,15 @@ import com.android.volley.DefaultRetryPolicy
 import com.android.volley.Request
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.net.URI
 
 fun requestDaysJsonData(context: Context,
                         serverUrl: String,
                         portValue: Int,
-                        callback: (succeed: Boolean, response: String, error: String?)->Unit) {
+                        callback: suspend (succeed: Boolean, response: String, error: String?)->Unit) {
     val url = URI(serverUrl).let {
         URI(it.scheme, it.userInfo, it.host, portValue, "/all_temps", it.query, it.fragment)
     }
@@ -18,11 +21,15 @@ fun requestDaysJsonData(context: Context,
     val stringRequest = StringRequest(
         Request.Method.GET, url.toString(),
         { response ->
-            callback(true, response, null)
+            CoroutineScope(Dispatchers.IO).launch {
+                callback(true, response, null)
+            }
         },
         { error ->
             println("[error] couldn't make request to web service `$url`: $error")
-            callback(false, "", error.message)
+            CoroutineScope(Dispatchers.IO).launch {
+                callback(false, "", error.message)
+            }
         }
     ).setRetryPolicy(DefaultRetryPolicy(10_000, 1, 1f))
     Volley.newRequestQueue(context).add(stringRequest)
