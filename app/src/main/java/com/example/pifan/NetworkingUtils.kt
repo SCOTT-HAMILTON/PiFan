@@ -9,13 +9,21 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.net.URI
+import java.net.URISyntaxException
 
 fun requestDaysJsonData(context: Context,
                         serverUrl: String,
                         portValue: Int,
                         callback: suspend (succeed: Boolean, response: String, error: String?)->Unit) {
-    val url = URI(serverUrl).let {
-        URI(it.scheme, it.userInfo, it.host, portValue, "/all_temps", it.query, it.fragment)
+    val url = try {
+        URI(serverUrl).let {
+            URI(it.scheme, it.userInfo, it.host, portValue, "/all_temps", it.query, it.fragment)
+        }
+    } catch (e: URISyntaxException) {
+        CoroutineScope(Dispatchers.IO).launch {
+            callback(false, "", e.message)
+        }
+        return
     }
     println("serverUrl: $serverUrl, portValue: $portValue, final Url: `$url`")
     val stringRequest = StringRequest(

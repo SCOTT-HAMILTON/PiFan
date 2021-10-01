@@ -34,9 +34,8 @@ fun DaysList(daysJsonData: List<List<TempDataPoint>>) {
         LocalDateTime.ofEpochSecond(it, 0, ZoneOffset.UTC)
     }
     val now = LocalDateTime.now()
-    val offset = if (maxDate?.isBefore(now.withDayOfMonth(now.dayOfMonth-1)) == true) {
-        val period = Period.between(maxDate.toLocalDate(), now.toLocalDate())
-        period.days
+    val offset = if (maxDate != null) {
+        Period.between(maxDate.toLocalDate(), now.toLocalDate()).days
     } else { 0 }
     LazyColumn(
         state = listState,
@@ -89,7 +88,7 @@ fun List<List<TempDataPoint>>.zipWithDays(context: Context, offset: Int):
                     DateTimeFormatter.ofPattern("EEEE").format(
                         LocalDateTime.now().minusDays((index+offset).toLong())
                     ).let {
-                        it.first().toUpperCase()+it.substring(1)
+                        it.first().uppercaseChar()+it.substring(1)
                     }
                 } else {
                     TODO("VERSION.SDK_INT < O")
